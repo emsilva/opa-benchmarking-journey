@@ -37,4 +37,6 @@ Thumbs.db
 # Claude Code files
 .claude/
 claude.md
+CLAUDE.md
+article.md
 BENCHMARK_LOG.md

@@ -5,6 +5,10 @@
 
 set -e
 
+# Get script directory and source utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/benchmark-utils.sh"
+
 ITERATIONS=${1:-100}
 TEMP_DIR="/tmp/opa-benchmark"
 OPA_SERVER_URL="http://localhost:8181"
@@ -110,13 +114,18 @@ benchmark_policy() {
             -d "$input_data" >/dev/null 2>&1 || true
     done
     
-    # Actual benchmark
+    # Create temporary file for individual latencies
+    local latencies_file=$(create_latency_temp_file)
+    
+    # Actual benchmark with individual timing
     echo "Running $ITERATIONS iterations..."
     
-    # Use /proc/uptime for better precision timing
-    start_time=$(awk '{print $1}' /proc/uptime)
+    local total_start_time=$(date +%s.%N)
     
     for ((i=1; i<=ITERATIONS; i++)); do
+        # Time each individual HTTP request with nanosecond precision
+        local request_start=$(date +%s.%N)
+        
         # Test one request and verify it works
         if [ $i -eq 1 ]; then
             response=$(curl -s -X POST "$OPA_SERVER_URL/v1/data/$endpoint" \
@@ -129,32 +138,54 @@ benchmark_policy() {
                 -d "$input_data" >/dev/null 2>&1 || true
         fi
         
+        local request_end=$(date +%s.%N)
+        
+        # Calculate and store latency in milliseconds with high precision
+        local latency_ms=$(echo "scale=6; ($request_end - $request_start) * 1000" | bc -l)
+        echo "$latency_ms" >> "$latencies_file"
+        
         if [ $((i % 50)) -eq 0 ]; then
             echo -n "."
         fi
     done
     echo ""
     
-    end_time=$(awk '{print $1}' /proc/uptime)
-    duration=$(echo "$end_time - $start_time" | bc -l)
+    local total_end_time=$(date +%s.%N)
+    local total_duration=$(echo "scale=6; $total_end_time - $total_start_time" | bc -l)
     
-    # Ensure minimum duration to avoid division by zero
-    if [ "$(echo "$duration < 0.001" | bc -l)" -eq 1 ]; then
-        duration="0.001"
-    fi
+    # Calculate basic statistics
+    local stats=$(calculate_basic_stats "$latencies_file")
+    local count=$(echo $stats | cut -d' ' -f1)
+    local sum=$(echo $stats | cut -d' ' -f2)
+    local mean=$(echo $stats | cut -d' ' -f3)
+    local min=$(echo $stats | cut -d' ' -f4)
+    local max=$(echo $stats | cut -d' ' -f5)
+    
+    # Calculate percentiles
+    local percentiles=$(calculate_percentiles "$latencies_file" "$ITERATIONS")
+    local p50=$(echo $percentiles | cut -d' ' -f1)
+    local p95=$(echo $percentiles | cut -d' ' -f2)
+    local p99=$(echo $percentiles | cut -d' ' -f3)
     
     # Calculate policies per second
-    policies_per_second=$(echo "scale=2; $ITERATIONS / $duration" | bc -l)
-    avg_latency_ms=$(echo "scale=2; ($duration * 1000) / $ITERATIONS" | bc -l)
+    local policies_per_second=$(echo "scale=2; $ITERATIONS / $total_duration" | bc -l)
     
     echo "Results:"
-    echo "  Total time: ${duration}s"
-    echo "  Average latency: ${avg_latency_ms}ms"
+    echo "  Total time: ${total_duration}s"
+    echo "  Average latency: ${mean}ms"
     echo "  Policies per second: ${policies_per_second}"
+    
+    # Display percentile information
+    format_percentiles "$p50" "$p95" "$p99"
+    
+    echo "  Latency range: ${min}ms - ${max}ms"
     echo ""
     
-    # Store results
-    echo "$policy_name,$mode,$ITERATIONS,$duration,$policies_per_second,$avg_latency_ms" >> "$TEMP_DIR/results.csv"
+    # Store results (extended format)
+    echo "$policy_name,$mode,$ITERATIONS,$total_duration,$policies_per_second,$mean,$p50,$p95,$p99,$min,$max" >> "$TEMP_DIR/results.csv"
+    
+    # Clean up temporary file
+    rm -f "$latencies_file"
 }
 
 # Check if bc is available
@@ -180,7 +211,7 @@ if [ "$wasm_support" = "unavailable" ]; then
     echo ""
     
     # Create results showing WASM is unsupported
-    echo "Policy,Mode,Iterations,Duration(s),Policies/Second,Avg_Latency(ms)" > "$TEMP_DIR/results.csv"
+    echo "Policy,Mode,Iterations,Duration(s),Policies/Second,Avg_Latency(ms),P50(ms),P95(ms),P99(ms),Min(ms),Max(ms)" > "$TEMP_DIR/results.csv"
     WASM_SUPPORTED=false
 else
     echo "✅ OPA supports WebAssembly - proceeding with WASM benchmarks."
@@ -198,7 +229,7 @@ trap stop_opa_server EXIT
 
 # Initialize results file (unless already created due to WASM unavailable)
 if [ ! -f "$TEMP_DIR/results.csv" ]; then
-    echo "Policy,Mode,Iterations,Duration(s),Policies/Second,Avg_Latency(ms)" > "$TEMP_DIR/results.csv"
+    echo "Policy,Mode,Iterations,Duration(s),Policies/Second,Avg_Latency(ms),P50(ms),P95(ms),P99(ms),Min(ms),Max(ms)" > "$TEMP_DIR/results.csv"
 fi
 
 echo "=== BASELINE (REGO) TESTS ==="
@@ -231,9 +262,9 @@ echo ""
 # Skip WASM tests if not supported
 if [ "$WASM_SUPPORTED" = "false" ]; then
     echo "Skipping WASM tests - WebAssembly not supported by this OPA build."
-    echo "Simple RBAC,wasm,$ITERATIONS,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED" >> "$TEMP_DIR/results.csv"
-    echo "API Authorization,wasm,$ITERATIONS,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED" >> "$TEMP_DIR/results.csv"
-    echo "Financial Risk Assessment,wasm,$ITERATIONS,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED" >> "$TEMP_DIR/results.csv"
+    echo "Simple RBAC,wasm,$ITERATIONS,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED" >> "$TEMP_DIR/results.csv"
+    echo "API Authorization,wasm,$ITERATIONS,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED" >> "$TEMP_DIR/results.csv"
+    echo "Financial Risk Assessment,wasm,$ITERATIONS,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED,UNSUPPORTED" >> "$TEMP_DIR/results.csv"
 else
     # Test Simple RBAC with WASM
     if [ -f "wasm/rbac-bundle.tar.gz" ]; then
@@ -244,14 +275,14 @@ else
         benchmark_policy "Simple RBAC" "rbac/allow" "$RBAC_INPUT" "wasm"
     else
         echo "ERROR: Could not connect to RBAC WASM server"
-        echo "Simple RBAC,wasm,$ITERATIONS,ERROR,ERROR,ERROR" >> "$TEMP_DIR/results.csv"
+        echo "Simple RBAC,wasm,$ITERATIONS,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR" >> "$TEMP_DIR/results.csv"
     fi
     
     stop_opa_server
     echo ""
 else
     echo "WARNING: rbac-bundle.tar.gz not found, skipping RBAC WASM benchmark"
-    echo "Simple RBAC,wasm,$ITERATIONS,MISSING,MISSING,MISSING" >> "$TEMP_DIR/results.csv"
+    echo "Simple RBAC,wasm,$ITERATIONS,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING" >> "$TEMP_DIR/results.csv"
 fi
 
 # Test API Authorization with WASM  
@@ -262,14 +293,14 @@ if [ -f "wasm/api-bundle.tar.gz" ]; then
         benchmark_policy "API Authorization" "api/authz/allow" "$API_INPUT" "wasm"
     else
         echo "ERROR: Could not connect to API WASM server"
-        echo "API Authorization,wasm,$ITERATIONS,ERROR,ERROR,ERROR" >> "$TEMP_DIR/results.csv"
+        echo "API Authorization,wasm,$ITERATIONS,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR" >> "$TEMP_DIR/results.csv"
     fi
     
     stop_opa_server
     echo ""
 else
     echo "WARNING: api-bundle.tar.gz not found, skipping API WASM benchmark"
-    echo "API Authorization,wasm,$ITERATIONS,MISSING,MISSING,MISSING" >> "$TEMP_DIR/results.csv"
+    echo "API Authorization,wasm,$ITERATIONS,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING" >> "$TEMP_DIR/results.csv"
 fi
 
 # Test Financial Risk with WASM
@@ -280,14 +311,14 @@ if [ -f "wasm/financial-bundle.tar.gz" ]; then
         benchmark_policy "Financial Risk Assessment" "finance/risk/approve_loan" "$FINANCIAL_INPUT" "wasm"
     else
         echo "ERROR: Could not connect to Financial WASM server"
-        echo "Financial Risk Assessment,wasm,$ITERATIONS,ERROR,ERROR,ERROR" >> "$TEMP_DIR/results.csv"
+        echo "Financial Risk Assessment,wasm,$ITERATIONS,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR" >> "$TEMP_DIR/results.csv"
     fi
     
     stop_opa_server
     echo ""
 else
     echo "WARNING: financial-bundle.tar.gz not found, skipping Financial WASM benchmark"
-    echo "Financial Risk Assessment,wasm,$ITERATIONS,MISSING,MISSING,MISSING" >> "$TEMP_DIR/results.csv"
+    echo "Financial Risk Assessment,wasm,$ITERATIONS,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING,MISSING" >> "$TEMP_DIR/results.csv"
 fi
 fi  # End WASM_SUPPORTED check
 
@@ -299,27 +330,25 @@ echo ""
 echo "=== WEBASSEMBLY BENCHMARK ANALYSIS ===" 
 echo ""
 
-# Print comparison table
-printf "%-25s %12s %15s %15s %15s\\n" "Policy" "Mode" "Requests/Sec" "Latency(ms)" "Improvement"
-printf "%-25s %12s %15s %15s %15s\\n" "------" "----" "------------" "-----------" "-----------"
+# Print comparison table with percentiles
+printf "%-25s %12s %15s %12s %12s %12s\\n" "Policy" "Mode" "Requests/Sec" "Avg Latency" "P95 Latency" "P99 Latency"
+printf "%-25s %12s %15s %12s %12s %12s\\n" "------" "----" "------------" "-----------" "-----------" "-----------"
 
 # Show Rego results first
-grep ",rego," "$TEMP_DIR/results.csv" | while IFS=',' read -r policy mode iterations duration rps latency; do
-    printf "%-25s %12s %15s %15s %15s\\n" "$policy" "$mode" "$rps" "$latency" "baseline"
+grep ",rego," "$TEMP_DIR/results.csv" | while IFS=',' read -r policy mode iterations duration rps avg_latency p50 p95 p99 min max; do
+    if [ "$policy" != "Policy" ]; then
+        printf "%-25s %12s %15s %9.2f ms %9.2f ms %9.2f ms\\n" "$policy" "$mode" "$rps" "$avg_latency" "$p95" "$p99"
+    fi
 done
 
 echo ""
 
-# Show WASM results with comparison
-grep ",wasm," "$TEMP_DIR/results.csv" | while IFS=',' read -r policy mode iterations duration rps latency; do
-    # Get corresponding Rego result
-    rego_rps=$(awk -F',' -v p="$policy" '$1==p && $2=="rego" {print $5}' "$TEMP_DIR/results.csv")
-    
-    if [ -n "$rego_rps" ] && [ "$rps" != "ERROR" ] && [ "$rps" != "MISSING" ]; then
-        improvement=$(echo "scale=2; ($rps - $rego_rps) / $rego_rps * 100" | bc -l)
-        printf "%-25s %12s %15s %15s %14s%%\\n" "$policy" "$mode" "$rps" "$latency" "$improvement"
+# Show WASM results
+grep ",wasm," "$TEMP_DIR/results.csv" | while IFS=',' read -r policy mode iterations duration rps avg_latency p50 p95 p99 min max; do
+    if [ "$policy" != "Policy" ] && [ "$rps" != "ERROR" ] && [ "$rps" != "MISSING" ] && [ "$rps" != "UNSUPPORTED" ]; then
+        printf "%-25s %12s %15s %9.2f ms %9.2f ms %9.2f ms\\n" "$policy" "$mode" "$rps" "$avg_latency" "$p95" "$p99"
     else
-        printf "%-25s %12s %15s %15s %15s\\n" "$policy" "$mode" "$rps" "$latency" "N/A"
+        printf "%-25s %12s %15s %12s %12s %12s\\n" "$policy" "$mode" "$rps" "$avg_latency" "$p95" "$p99"
     fi
 done
 

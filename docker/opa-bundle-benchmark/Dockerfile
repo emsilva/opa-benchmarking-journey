@@ -1,7 +1,7 @@
 FROM alpine:3.19
 
-# Install curl and basic tools
-RUN apk add --no-cache curl bash bc jq
+# Install curl, basic tools, and GNU coreutils for nanosecond timing
+RUN apk add --no-cache curl bash bc jq coreutils
 
 # Download and install OPA
 RUN curl -L -o /usr/local/bin/opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static && \

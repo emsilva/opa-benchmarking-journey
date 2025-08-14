@@ -6,6 +6,10 @@
 
 set -e
 
+# Get script directory and source utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/benchmark-utils.sh"
+
 ITERATIONS=${1:-1000}
 TEMP_DIR="/tmp/opa-benchmark"
 OPA_SERVER_URL="http://localhost:8181"
@@ -88,13 +92,18 @@ benchmark_policy() {
             -d "$input_data" >/dev/null 2>&1 || true
     done
     
-    # Actual benchmark
+    # Create temporary file for individual latencies
+    local latencies_file=$(create_latency_temp_file)
+    
+    # Actual benchmark with individual timing
     echo "Running $ITERATIONS iterations..."
     
-    # Use /proc/uptime for better precision timing
-    start_time=$(awk '{print $1}' /proc/uptime)
+    local total_start_time=$(date +%s.%N)
     
     for ((i=1; i<=ITERATIONS; i++)); do
+        # Time each individual HTTP request with nanosecond precision
+        local request_start=$(date +%s.%N)
+        
         # Test one request and verify it works
         if [ $i -eq 1 ]; then
             response=$(curl -s -X POST "$OPA_SERVER_URL/v1/data/$endpoint" \
@@ -107,32 +116,54 @@ benchmark_policy() {
                 -d "$input_data" >/dev/null 2>&1 || true
         fi
         
+        local request_end=$(date +%s.%N)
+        
+        # Calculate and store latency in milliseconds with high precision
+        local latency_ms=$(echo "scale=6; ($request_end - $request_start) * 1000" | bc -l)
+        echo "$latency_ms" >> "$latencies_file"
+        
         if [ $((i % 100)) -eq 0 ]; then
             echo -n "."
         fi
     done
     echo ""
     
-    end_time=$(awk '{print $1}' /proc/uptime)
-    duration=$(echo "$end_time - $start_time" | bc -l)
+    local total_end_time=$(date +%s.%N)
+    local total_duration=$(echo "scale=6; $total_end_time - $total_start_time" | bc -l)
     
-    # Ensure minimum duration to avoid division by zero
-    if [ "$(echo "$duration < 0.001" | bc -l)" -eq 1 ]; then
-        duration="0.001"
-    fi
+    # Calculate basic statistics
+    local stats=$(calculate_basic_stats "$latencies_file")
+    local count=$(echo $stats | cut -d' ' -f1)
+    local sum=$(echo $stats | cut -d' ' -f2)
+    local mean=$(echo $stats | cut -d' ' -f3)
+    local min=$(echo $stats | cut -d' ' -f4)
+    local max=$(echo $stats | cut -d' ' -f5)
+    
+    # Calculate percentiles
+    local percentiles=$(calculate_percentiles "$latencies_file" "$ITERATIONS")
+    local p50=$(echo $percentiles | cut -d' ' -f1)
+    local p95=$(echo $percentiles | cut -d' ' -f2)
+    local p99=$(echo $percentiles | cut -d' ' -f3)
     
     # Calculate policies per second
-    policies_per_second=$(echo "scale=2; $ITERATIONS / $duration" | bc -l)
-    avg_latency_ms=$(echo "scale=2; ($duration * 1000) / $ITERATIONS" | bc -l)
+    local policies_per_second=$(echo "scale=2; $ITERATIONS / $total_duration" | bc -l)
     
     echo "Results:"
-    echo "  Total time: ${duration}s"
-    echo "  Average latency: ${avg_latency_ms}ms"
+    echo "  Total time: ${total_duration}s"
+    echo "  Average latency: ${mean}ms"
     echo "  Policies per second: ${policies_per_second}"
+    
+    # Display percentile information
+    format_percentiles "$p50" "$p95" "$p99"
+    
+    echo "  Latency range: ${min}ms - ${max}ms"
     echo ""
     
-    # Store results
-    echo "$policy_name,$mode,$ITERATIONS,$duration,$policies_per_second,$avg_latency_ms" >> "$RESULTS_DIR/optimization_results.csv"
+    # Store results (extended format)
+    echo "$policy_name,$mode,$ITERATIONS,$total_duration,$policies_per_second,$mean,$p50,$p95,$p99,$min,$max" >> "$RESULTS_DIR/optimization_results.csv"
+    
+    # Clean up temporary file
+    rm -f "$latencies_file"
 }
 
 # Function to collect CPU profile during execution
@@ -180,27 +211,53 @@ analyze_optimization_results() {
         return 1
     fi
     
-    echo "Performance Comparison (Original vs Optimized):"
-    echo "==============================================="
-    printf "%-25s %12s %15s %15s %15s\\n" "Policy" "Version" "Requests/Sec" "Latency(ms)" "Improvement"
-    printf "%-25s %12s %15s %15s %15s\\n" "------" "-------" "------------" "-----------" "-----------"
+    echo "Performance Comparison with Percentiles (Original vs Optimized):"
+    echo "================================================================"
+    printf "%-25s %12s %12s %12s %12s %12s\\n" "Policy" "Version" "Requests/Sec" "Avg Latency" "P95 Latency" "P99 Latency"
+    printf "%-25s %12s %12s %12s %12s %12s\\n" "------" "-------" "------------" "-----------" "-----------" "-----------"
+    
+    # Show original results first
+    while IFS=',' read -r policy version iterations duration rps avg_latency p50 p95 p99 min max; do
+        if [ "$policy" != "Policy" ] && [ "$version" = "original" ]; then
+            printf "%-25s %12s %12s %9.2f ms %9.2f ms %9.2f ms\\n" "$policy" "$version" "$rps" "$avg_latency" "$p95" "$p99"
+        fi
+    done < "$results_file"
+    
+    echo ""
+    
+    # Show optimized results
+    while IFS=',' read -r policy version iterations duration rps avg_latency p50 p95 p99 min max; do
+        if [ "$policy" != "Policy" ] && [ "$version" = "optimized" ]; then
+            printf "%-25s %12s %12s %9.2f ms %9.2f ms %9.2f ms\\n" "$policy" "$version" "$rps" "$avg_latency" "$p95" "$p99"
+        fi
+    done < "$results_file"
+    
+    echo ""
+    echo "=== DETAILED IMPROVEMENT ANALYSIS ==="
+    echo ""
     
     # Analyze each policy
     for policy_name in "Simple RBAC" "API Authorization" "Financial Risk Assessment"; do
         # Get original performance
         original_rps=$(awk -F',' -v p="$policy_name" '$1==p && $2=="original" {print $5}' "$results_file")
         original_latency=$(awk -F',' -v p="$policy_name" '$1==p && $2=="original" {print $6}' "$results_file")
+        original_p95=$(awk -F',' -v p="$policy_name" '$1==p && $2=="original" {print $8}' "$results_file")
         
         # Get optimized performance  
         optimized_rps=$(awk -F',' -v p="$policy_name" '$1==p && $2=="optimized" {print $5}' "$results_file")
         optimized_latency=$(awk -F',' -v p="$policy_name" '$1==p && $2=="optimized" {print $6}' "$results_file")
+        optimized_p95=$(awk -F',' -v p="$policy_name" '$1==p && $2=="optimized" {print $8}' "$results_file")
         
         if [ -n "$original_rps" ] && [ -n "$optimized_rps" ]; then
-            # Calculate improvement
-            improvement=$(echo "scale=1; (($optimized_rps - $original_rps) / $original_rps) * 100" | bc -l)
+            # Calculate improvements
+            rps_improvement=$(echo "scale=1; (($optimized_rps - $original_rps) / $original_rps) * 100" | bc -l)
+            latency_improvement=$(echo "scale=1; (($original_latency - $optimized_latency) / $original_latency) * 100" | bc -l)
+            p95_improvement=$(echo "scale=1; (($original_p95 - $optimized_p95) / $original_p95) * 100" | bc -l)
             
-            printf "%-25s %12s %15s %15s %15s\\n" "$policy_name" "Original" "$original_rps" "$original_latency" "baseline"
-            printf "%-25s %12s %15s %15s %14s%%\\n" "$policy_name" "Optimized" "$optimized_rps" "$optimized_latency" "$improvement"
+            echo "--- $policy_name Optimization Impact ---"
+            echo "  Throughput: $original_rps → $optimized_rps req/s (${rps_improvement}% improvement)"
+            echo "  Avg Latency: ${original_latency}ms → ${optimized_latency}ms (${latency_improvement}% improvement)"
+            echo "  P95 Latency: ${original_p95}ms → ${optimized_p95}ms (${p95_improvement}% improvement)"
             echo ""
         fi
     done
@@ -284,7 +341,7 @@ echo ""
 trap stop_opa_server EXIT
 
 # Initialize results file
-echo "Policy,Version,Iterations,Duration(s),Requests/Sec,Avg_Latency(ms)" > "$RESULTS_DIR/optimization_results.csv"
+echo "Policy,Version,Iterations,Duration(s),Requests/Sec,Avg_Latency(ms),P50(ms),P95(ms),P99(ms),Min(ms),Max(ms)" > "$RESULTS_DIR/optimization_results.csv"
 
 echo "=== TESTING ORIGINAL POLICIES ==="
 echo ""

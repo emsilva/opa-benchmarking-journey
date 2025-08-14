@@ -5,6 +5,10 @@
 
 set -e
 
+# Get script directory and source utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/benchmark-utils.sh"
+
 ITERATIONS=${1:-100}
 TEMP_DIR="/tmp/opa-benchmark"
 OPA_SERVER_URL="http://localhost:8181"
@@ -90,7 +94,12 @@ benchmark_policy_concurrent() {
     echo "Running $ITERATIONS requests with $concurrency parallel workers..."
     echo "  $iterations_per_worker requests per worker (+ $remaining_iterations extra)"
     
-    # Create temporary script for parallel execution
+    # Create combined latencies file
+    local combined_latencies="$TEMP_DIR/latencies_${policy_name// /_}_${concurrency}.txt"
+    rm -f "$combined_latencies"
+    touch "$combined_latencies"
+    
+    # Create temporary script for parallel execution with individual timing
     local worker_script="$TEMP_DIR/worker_${policy_name// /_}.sh"
     cat > "$worker_script" << EOF
 #!/bin/bash
@@ -98,17 +107,25 @@ worker_id=\$1
 iterations=\$2
 endpoint="$endpoint"
 input_data='$input_data'
+latencies_file="$combined_latencies"
 
 for ((i=1; i<=iterations; i++)); do
+    # Time each individual request with nanosecond precision
+    request_start=\$(date +%s.%N)
     curl -s -X POST "$OPA_SERVER_URL/v1/data/\$endpoint" \\
         -H "Content-Type: application/json" \\
         -d "\$input_data" >/dev/null 2>&1 || true
+    request_end=\$(date +%s.%N)
+    
+    # Calculate latency in milliseconds with high precision and append to shared file
+    latency_ms=\$(echo "scale=6; (\$request_end - \$request_start) * 1000" | bc -l)
+    echo "\$latency_ms" >> "\$latencies_file"
 done
 EOF
     chmod +x "$worker_script"
     
-    # Start timing
-    start_time=$(awk '{print $1}' /proc/uptime)
+    # Start timing with nanosecond precision
+    local total_start_time=$(date +%s.%N)
     
     # Launch parallel workers
     local pids=()
@@ -138,30 +155,43 @@ EOF
     done
     echo ""
     
-    # End timing
-    end_time=$(awk '{print $1}' /proc/uptime)
-    duration=$(echo "$end_time - $start_time" | bc -l)
+    # End timing with nanosecond precision
+    local total_end_time=$(date +%s.%N)
+    local total_duration=$(echo "scale=6; $total_end_time - $total_start_time" | bc -l)
     
-    # Ensure minimum duration
-    if [ "$(echo "$duration < 0.001" | bc -l)" -eq 1 ]; then
-        duration="0.001"
-    fi
+    # Calculate basic statistics from combined latencies
+    local stats=$(calculate_basic_stats "$combined_latencies")
+    local count=$(echo $stats | cut -d' ' -f1)
+    local sum=$(echo $stats | cut -d' ' -f2)
+    local mean=$(echo $stats | cut -d' ' -f3)
+    local min=$(echo $stats | cut -d' ' -f4)
+    local max=$(echo $stats | cut -d' ' -f5)
     
-    # Calculate metrics
-    requests_per_second=$(echo "scale=2; $ITERATIONS / $duration" | bc -l)
-    avg_latency_ms=$(echo "scale=2; ($duration * 1000) / $ITERATIONS" | bc -l)
+    # Calculate percentiles
+    local percentiles=$(calculate_percentiles "$combined_latencies" "$count")
+    local p50=$(echo $percentiles | cut -d' ' -f1)
+    local p95=$(echo $percentiles | cut -d' ' -f2)
+    local p99=$(echo $percentiles | cut -d' ' -f3)
+    
+    # Calculate requests per second
+    local requests_per_second=$(echo "scale=2; $ITERATIONS / $total_duration" | bc -l)
     
     echo "Results:"
-    echo "  Total time: ${duration}s"
-    echo "  Average latency: ${avg_latency_ms}ms"
+    echo "  Total time: ${total_duration}s"
+    echo "  Average latency: ${mean}ms"
     echo "  Requests per second: ${requests_per_second}"
+    
+    # Display percentile information
+    format_percentiles "$p50" "$p95" "$p99"
+    
+    echo "  Latency range: ${min}ms - ${max}ms"
     echo ""
     
-    # Store results
-    echo "$policy_name,$concurrency,$ITERATIONS,$duration,$requests_per_second,$avg_latency_ms,0" >> "$TEMP_DIR/results.csv"
+    # Store results with percentiles
+    echo "$policy_name,$concurrency,$ITERATIONS,$total_duration,$requests_per_second,$mean,$p50,$p95,$p99,$min,$max" >> "$TEMP_DIR/results.csv"
     
     # Cleanup
-    rm -f "$worker_script"
+    rm -f "$worker_script" "$combined_latencies"
 }
 
 # Function to run single-threaded baseline for comparison

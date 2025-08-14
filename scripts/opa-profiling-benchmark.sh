@@ -6,6 +6,10 @@
 
 set -e
 
+# Get script directory and source utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/benchmark-utils.sh"
+
 ITERATIONS=${1:-1000}
 TEMP_DIR="/tmp/opa-benchmark"
 OPA_SERVER_URL="http://localhost:8181"

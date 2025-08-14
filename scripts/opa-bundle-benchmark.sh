@@ -5,6 +5,10 @@
 
 set -e
 
+# Get script directory and source utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/benchmark-utils.sh"
+
 ITERATIONS=${1:-100}
 TEMP_DIR="/tmp/opa-benchmark"
 OPA_SERVER_URL="http://localhost:8181"
@@ -89,42 +93,68 @@ benchmark_policy() {
             -d "$input_data" >/dev/null 2>&1 || true
     done
     
-    # Actual benchmark
+    # Create temporary file for individual latencies
+    local latencies_file=$(create_latency_temp_file)
+    
+    # Actual benchmark with individual timing
     echo "Running $ITERATIONS iterations..."
     
-    # Use /proc/uptime for better precision timing
-    start_time=$(awk '{print $1}' /proc/uptime)
+    local total_start_time=$(date +%s.%N)
     
     for ((i=1; i<=ITERATIONS; i++)); do
+        # Time each individual HTTP request with nanosecond precision
+        local request_start=$(date +%s.%N)
         curl -s -X POST "$OPA_SERVER_URL/v1/data/$endpoint" \
             -H "Content-Type: application/json" \
             -d "$input_data" >/dev/null 2>&1 || true
+        local request_end=$(date +%s.%N)
+        
+        # Calculate and store latency in milliseconds with high precision
+        local latency_ms=$(echo "scale=6; ($request_end - $request_start) * 1000" | bc -l)
+        echo "$latency_ms" >> "$latencies_file"
+        
         if [ $((i % 10)) -eq 0 ]; then
             echo -n "."
         fi
     done
     echo ""
     
-    end_time=$(awk '{print $1}' /proc/uptime)
-    duration=$(echo "$end_time - $start_time" | bc -l)
+    local total_end_time=$(date +%s.%N)
+    local total_duration=$(echo "scale=6; $total_end_time - $total_start_time" | bc -l)
     
-    # Ensure minimum duration to avoid division by zero
-    if [ "$(echo "$duration < 0.001" | bc -l)" -eq 1 ]; then
-        duration="0.001"
-    fi
+    # Calculate basic statistics
+    local stats=$(calculate_basic_stats "$latencies_file")
+    local count=$(echo $stats | cut -d' ' -f1)
+    local sum=$(echo $stats | cut -d' ' -f2)
+    local mean=$(echo $stats | cut -d' ' -f3)
+    local min=$(echo $stats | cut -d' ' -f4)
+    local max=$(echo $stats | cut -d' ' -f5)
+    
+    # Calculate percentiles
+    local percentiles=$(calculate_percentiles "$latencies_file" "$ITERATIONS")
+    local p50=$(echo $percentiles | cut -d' ' -f1)
+    local p95=$(echo $percentiles | cut -d' ' -f2)
+    local p99=$(echo $percentiles | cut -d' ' -f3)
     
     # Calculate policies per second
-    policies_per_second=$(echo "scale=2; $ITERATIONS / $duration" | bc -l)
-    avg_latency_ms=$(echo "scale=2; ($duration * 1000) / $ITERATIONS" | bc -l)
+    local policies_per_second=$(echo "scale=2; $ITERATIONS / $total_duration" | bc -l)
     
     echo "Results:"
-    echo "  Total time: ${duration}s"
-    echo "  Average latency: ${avg_latency_ms}ms"
+    echo "  Total time: ${total_duration}s"
+    echo "  Average latency: ${mean}ms"
     echo "  Policies per second: ${policies_per_second}"
+    
+    # Display percentile information
+    format_percentiles "$p50" "$p95" "$p99"
+    
+    echo "  Latency range: ${min}ms - ${max}ms"
     echo ""
     
-    # Store results
-    echo "$policy_name,$ITERATIONS,$duration,$policies_per_second,$avg_latency_ms" >> "$results_file"
+    # Store results (extended format)
+    echo "$policy_name,$ITERATIONS,$total_duration,$policies_per_second,$mean,$p50,$p95,$p99,$min,$max" >> "$results_file"
+    
+    # Clean up temporary file
+    rm -f "$latencies_file"
 }
 
 # Function to run full benchmark suite
@@ -142,7 +172,7 @@ run_benchmark_suite() {
     start_opa_server "$optimization_mode"
     
     # Initialize results file
-    echo "Policy,Iterations,Duration(s),Policies/Second,Avg_Latency(ms)" > "$results_file"
+    echo "Policy,Iterations,Duration(s),Policies/Second,Avg_Latency(ms),P50(ms),P95(ms),P99(ms),Min(ms),Max(ms)" > "$results_file"
     
     # Test server connectivity
     echo "Testing server connectivity..."
@@ -191,19 +221,46 @@ echo ""
 echo "=== STORE OPTIMIZATION COMPARISON ==="
 echo ""
 
-# Print comparison table
-printf "%-25s %15s %15s %15s %15s\\n" "Policy" "Standard" "Optimized" "Improvement" "Latency"
-printf "%-25s %15s %15s %15s %15s\\n" "------" "---------" "---------" "-----------" "-------"
+# Print comparison table with percentiles
+printf "%-25s %10s %12s %12s %12s %12s\\n" "Policy" "Mode" "Requests/Sec" "Avg Latency" "P95 Latency" "P99 Latency"
+printf "%-25s %10s %12s %12s %12s %12s\\n" "------" "----" "------------" "-----------" "-----------" "-----------"
 
-while IFS=',' read -r policy iterations duration policies_per_sec latency; do
+# Show standard results
+while IFS=',' read -r policy iterations duration policies_per_sec avg_latency p50 p95 p99 min max; do
+    if [ "$policy" != "Policy" ]; then
+        printf "%-25s %10s %12s %9.2f ms %9.2f ms %9.2f ms\\n" "$policy" "standard" "$policies_per_sec" "$avg_latency" "$p95" "$p99"
+    fi
+done < "$TEMP_DIR/results-standard.csv"
+
+echo ""
+
+# Show optimized results
+while IFS=',' read -r policy iterations duration policies_per_sec avg_latency p50 p95 p99 min max; do
+    if [ "$policy" != "Policy" ]; then
+        printf "%-25s %10s %12s %9.2f ms %9.2f ms %9.2f ms\\n" "$policy" "optimized" "$policies_per_sec" "$avg_latency" "$p95" "$p99"
+    fi
+done < "$TEMP_DIR/results-optimized.csv"
+
+echo ""
+echo "=== OPTIMIZATION IMPACT ANALYSIS ==="
+echo ""
+
+# Show improvement analysis
+while IFS=',' read -r policy iterations duration policies_per_sec avg_latency p50 p95 p99 min max; do
     if [ "$policy" != "Policy" ]; then
         # Get corresponding optimized result
         opt_result=$(awk -F',' -v p="$policy" '$1==p {print $4}' "$TEMP_DIR/results-optimized.csv")
         opt_latency=$(awk -F',' -v p="$policy" '$1==p {print $5}' "$TEMP_DIR/results-optimized.csv")
+        opt_p95=$(awk -F',' -v p="$policy" '$1==p {print $7}' "$TEMP_DIR/results-optimized.csv")
         
         if [ -n "$opt_result" ]; then
             improvement=$(echo "scale=2; ($opt_result - $policies_per_sec) / $policies_per_sec * 100" | bc -l)
-            printf "%-25s %15s %15s %14s%% %12s ms\\n" "$policy" "$policies_per_sec" "$opt_result" "$improvement" "$opt_latency"
+            latency_improvement=$(echo "scale=2; ($avg_latency - $opt_latency) / $avg_latency * 100" | bc -l)
+            echo "--- $policy Optimization Impact ---"
+            echo "  Requests/sec: $policies_per_sec → $opt_result (${improvement}% improvement)"
+            echo "  Avg latency: ${avg_latency}ms → ${opt_latency}ms (${latency_improvement}% improvement)"
+            echo "  P95 latency: ${p95}ms → ${opt_p95}ms"
+            echo ""
         fi
     fi
 done < "$TEMP_DIR/results-standard.csv"

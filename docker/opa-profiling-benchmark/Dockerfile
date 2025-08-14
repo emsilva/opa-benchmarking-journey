@@ -2,8 +2,8 @@
 # Profile-guided optimization analysis using Go pprof
 FROM alpine:3.19
 
-# Install dependencies for profiling
-RUN apk add --no-cache curl bash bc jq file graphviz go
+# Install dependencies for profiling and GNU coreutils for nanosecond timing
+RUN apk add --no-cache curl bash bc jq file graphviz go coreutils
 
 # Download OPA binary
 RUN curl -L -o /usr/local/bin/opa https://github.com/open-policy-agent/opa/releases/download/v1.7.1/opa_linux_amd64_static

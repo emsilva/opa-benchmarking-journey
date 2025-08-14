@@ -6,6 +6,10 @@
 
 set -e
 
+# Get script directory and source utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/benchmark-utils.sh"
+
 # Configuration
 ITERATIONS=${ITERATIONS:-1000}
 CONCURRENCY=${CONCURRENCY:-8}
@@ -135,64 +139,121 @@ benchmark_policy_concurrent() {
             -d "$input_data" >/dev/null 2>&1 || true
     done
     
-    # Create temp file for tracking
+    # Create combined latencies file
+    local combined_latencies="/tmp/latencies_combined_$$"
+    rm -f "$combined_latencies"
+    touch "$combined_latencies"
+    
+    # Create temp file for tracking workers
     local temp_file="/tmp/benchmark_$$"
     
     echo "Running $ITERATIONS iterations with $concurrency concurrent workers..."
     
+    # Calculate iterations per worker
+    local iterations_per_worker=$((ITERATIONS / concurrency))
+    local remaining_iterations=$((ITERATIONS % concurrency))
+    
+    # Create worker script for individual timing
+    local worker_script="/tmp/worker_${policy_name// /_}.sh"
+    cat > "$worker_script" << EOF
+#!/bin/bash
+worker_id=\$1
+iterations=\$2
+endpoint="$endpoint"
+input_data='$input_data'
+latencies_file="$combined_latencies"
+
+for ((i=1; i<=iterations; i++)); do
+    # Time each individual request with nanosecond precision
+    request_start=\$(date +%s.%N)
+    curl -s -X POST "$OPA_SERVER_URL/v1/data/\$endpoint" \\\\
+        -H "Content-Type: application/json" \\\\
+        -d "\$input_data" >/dev/null 2>&1 || true
+    request_end=\$(date +%s.%N)
+    
+    # Calculate latency in milliseconds with high precision and append to shared file
+    latency_ms=\$(echo "scale=6; (\$request_end - \$request_start) * 1000" | bc -l)
+    echo "\$latency_ms" >> "\$latencies_file"
+done
+echo "Worker \$worker_id completed" >> "$temp_file"
+EOF
+    chmod +x "$worker_script"
+    
     # Record start time
-    start_time=$(date +%s.%N)
+    local total_start_time=$(date +%s.%N)
     
     # Launch concurrent workers
+    local pids=()
     for ((worker=1; worker<=concurrency; worker++)); do
-        {
-            iterations_per_worker=$((ITERATIONS / concurrency))
-            for ((i=1; i<=iterations_per_worker; i++)); do
-                if [ $worker -eq 1 ] && [ $i -eq 1 ]; then
-                    # Test first request and verify it works
-                    response=$(curl -s -X POST "$OPA_SERVER_URL/v1/data/$endpoint" \
-                        -H "Content-Type: application/json" \
-                        -d "$input_data")
-                    echo "  First response: $response"
-                else
-                    curl -s -X POST "$OPA_SERVER_URL/v1/data/$endpoint" \
-                        -H "Content-Type: application/json" \
-                        -d "$input_data" >/dev/null 2>&1 || true
-                fi
-            done
-            echo "Worker $worker completed" >> "$temp_file"
-        } &
+        local worker_iterations=$iterations_per_worker
+        
+        # Add extra iteration to first worker if there's a remainder
+        if [ $worker -eq 1 ] && [ $remaining_iterations -gt 0 ]; then
+            worker_iterations=$((worker_iterations + remaining_iterations))
+        fi
+        
+        "$worker_script" $worker $worker_iterations &
+        pids+=($!)
     done
     
     # Wait for all workers to complete
-    wait
-    
-    # Record end time
-    end_time=$(date +%s.%N)
-    
-    # Calculate duration and metrics
-    duration=$(echo "$end_time - $start_time" | bc)
-    policies_per_second=$(echo "scale=2; $ITERATIONS / $duration" | bc)
-    avg_latency=$(echo "scale=2; ($duration * 1000) / $ITERATIONS" | bc)
-    
-    echo "Results:"
-    echo "  Total time: ${duration}s"
-    echo "  Average latency: ${avg_latency}ms"
-    echo "  Policies per second: $policies_per_second"
+    local completed=0
+    while [ $completed -lt $concurrency ]; do
+        completed=0
+        for pid in "${pids[@]}"; do
+            if ! kill -0 $pid 2>/dev/null; then
+                completed=$((completed + 1))
+            fi
+        done
+        sleep 0.1
+        echo -n "."
+    done
     echo ""
     
-    # Save results
-    echo "$policy_name,$mode,$ITERATIONS,$duration,$policies_per_second,$avg_latency,$concurrency,$NODE_NAME,$POD_NAME" >> "$RESULTS_DIR/benchmark_results.csv"
+    # Record end time
+    local total_end_time=$(date +%s.%N)
+    local total_duration=$(echo "scale=6; $total_end_time - $total_start_time" | bc -l)
+    
+    # Calculate basic statistics from combined latencies
+    local stats=$(calculate_basic_stats "$combined_latencies")
+    local count=$(echo $stats | cut -d' ' -f1)
+    local sum=$(echo $stats | cut -d' ' -f2)
+    local mean=$(echo $stats | cut -d' ' -f3)
+    local min=$(echo $stats | cut -d' ' -f4)
+    local max=$(echo $stats | cut -d' ' -f5)
+    
+    # Calculate percentiles
+    local percentiles=$(calculate_percentiles "$combined_latencies" "$count")
+    local p50=$(echo $percentiles | cut -d' ' -f1)
+    local p95=$(echo $percentiles | cut -d' ' -f2)
+    local p99=$(echo $percentiles | cut -d' ' -f3)
+    
+    # Calculate policies per second
+    local policies_per_second=$(echo "scale=2; $ITERATIONS / $total_duration" | bc -l)
+    
+    echo "Results:"
+    echo "  Total time: ${total_duration}s"
+    echo "  Average latency: ${mean}ms"
+    echo "  Policies per second: $policies_per_second"
+    
+    # Display percentile information
+    format_percentiles "$p50" "$p95" "$p99"
+    
+    echo "  Latency range: ${min}ms - ${max}ms"
+    echo ""
+    
+    # Save results (extended format)
+    echo "$policy_name,$mode,$ITERATIONS,$total_duration,$policies_per_second,$mean,$p50,$p95,$p99,$min,$max,$concurrency,$NODE_NAME,$POD_NAME" >> "$RESULTS_DIR/benchmark_results.csv"
     
     # Cleanup
-    rm -f "$temp_file"
+    rm -f "$temp_file" "$worker_script" "$combined_latencies"
 }
 
 # Ensure server cleanup
 trap stop_opa_server EXIT
 
 # Initialize results file
-echo "Policy,Mode,Iterations,Duration(s),Policies/Second,Avg_Latency(ms),Concurrency,Node,Pod" > "$RESULTS_DIR/benchmark_results.csv"
+echo "Policy,Mode,Iterations,Duration(s),Policies/Second,Avg_Latency(ms),P50(ms),P95(ms),P99(ms),Min(ms),Max(ms),Concurrency,Node,Pod" > "$RESULTS_DIR/benchmark_results.csv"
 
 # Check OPA version and WASM support
 echo "OPA Version Information:"
