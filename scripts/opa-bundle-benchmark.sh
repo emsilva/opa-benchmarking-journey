@@ -76,6 +76,7 @@ benchmark_policy() {
     local policy_name="$1"
     local endpoint="$2"
     local input_data="$3"
+    local results_file="$4"
     
     echo "Benchmarking: $policy_name"
     echo "----------------------------"
@@ -123,7 +124,7 @@ benchmark_policy() {
     echo ""
     
     # Store results
-    echo "$policy_name,$ITERATIONS,$duration,$policies_per_second,$avg_latency_ms" >> "$TEMP_DIR/results.csv"
+    echo "$policy_name,$ITERATIONS,$duration,$policies_per_second,$avg_latency_ms" >> "$results_file"
 }
 
 # Function to run full benchmark suite
@@ -153,13 +154,13 @@ run_benchmark_suite() {
     echo ""
     
     # Benchmark 1: Simple RBAC Policy
-    benchmark_policy "Simple RBAC" "rbac/allow" "$RBAC_INPUT"
+    benchmark_policy "Simple RBAC" "rbac/allow" "$RBAC_INPUT" "$results_file"
     
     # Benchmark 2: API Authorization Policy
-    benchmark_policy "API Authorization" "api/authz/allow" "$API_INPUT"
+    benchmark_policy "API Authorization" "api/authz/allow" "$API_INPUT" "$results_file"
     
     # Benchmark 3: Financial Risk Assessment Policy
-    benchmark_policy "Financial Risk Assessment" "finance/risk/approve_loan" "$FINANCIAL_INPUT"
+    benchmark_policy "Financial Risk Assessment" "finance/risk/approve_loan" "$FINANCIAL_INPUT" "$results_file"
     
     # Stop server
     stop_opa_server
