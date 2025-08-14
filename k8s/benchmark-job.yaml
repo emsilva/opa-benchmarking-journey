@@ -1,0 +1,193 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opa-benchmark-client
+  labels:
+    app: opa-benchmark-client
+spec:
+  parallelism: 3  # Run one client per node initially
+  completions: 3
+  template:
+    metadata:
+      labels:
+        app: opa-benchmark-client
+    spec:
+      # Ensure one client pod per node
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values: 
+                - opa-benchmark-client
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: benchmark-client
+        image: opa-cloud-benchmark:optimized
+        imagePullPolicy: Never  # Use local image
+        env:
+        - name: BENCHMARK_MODE
+          value: "client"
+        - name: OPA_SERVICE_URL
+          value: "http://opa-service:8181"
+        - name: ITERATIONS
+          value: "1000"
+        - name: CONCURRENCY
+          value: "8"  # 8 concurrent workers per client
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            cpu: 500m      # Half a core for benchmark client
+            memory: 512Mi  # 512MB RAM
+          limits:
+            cpu: 1000m     # Up to 1 full core during intensive benchmarking
+            memory: 1Gi    # 1GB RAM limit
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          echo "============================================"
+          echo "OPA Cloud Benchmark Client"
+          echo "============================================"
+          echo "Node: $NODE_NAME"
+          echo "Pod: $POD_NAME"
+          echo "OPA Service: $OPA_SERVICE_URL"
+          echo "Iterations: $ITERATIONS"
+          echo "Concurrency: $CONCURRENCY"
+          echo "Timestamp: $(date)"
+          echo ""
+          
+          # Wait for OPA service to be available
+          echo "Waiting for OPA service to be ready..."
+          for i in {1..60}; do
+            if curl -s $OPA_SERVICE_URL/health > /dev/null 2>&1; then
+              echo "OPA service is ready!"
+              break
+            fi
+            echo "  Attempt $i/60: Waiting for OPA service..."
+            sleep 5
+          done
+          
+          if ! curl -s $OPA_SERVICE_URL/health > /dev/null 2>&1; then
+            echo "ERROR: Cannot connect to OPA service after 5 minutes"
+            exit 1
+          fi
+          
+          echo ""
+          echo "=== RUNNING CLOUD BENCHMARK ==="
+          echo ""
+          
+          # Run the benchmark script in client mode
+          ./scripts/opa-cloud-benchmark.sh
+          
+          echo ""
+          echo "=== BENCHMARK CLIENT COMPLETE ==="
+          echo "Node: $NODE_NAME"
+          echo "Pod: $POD_NAME"
+      restartPolicy: Never
+  backoffLimit: 2
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opa-benchmark-6node
+  labels:
+    app: opa-benchmark-6node
+spec:
+  parallelism: 6  # Run one client per node for 6-node test
+  completions: 6
+  template:
+    metadata:
+      labels:
+        app: opa-benchmark-6node
+    spec:
+      # Ensure one client pod per node
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values: 
+                - opa-benchmark-6node
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: benchmark-client
+        image: opa-cloud-benchmark:optimized
+        imagePullPolicy: Never
+        env:
+        - name: BENCHMARK_MODE
+          value: "client"
+        - name: OPA_SERVICE_URL
+          value: "http://opa-service:8181"
+        - name: ITERATIONS
+          value: "1000"
+        - name: CONCURRENCY
+          value: "8"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          echo "============================================"
+          echo "OPA Cloud Benchmark Client (6-Node Test)"
+          echo "============================================"
+          echo "Node: $NODE_NAME"
+          echo "Pod: $POD_NAME"
+          echo "OPA Service: $OPA_SERVICE_URL"
+          echo "Iterations: $ITERATIONS"
+          echo "Concurrency: $CONCURRENCY"
+          echo "Timestamp: $(date)"
+          echo ""
+          
+          # Wait for OPA service
+          echo "Waiting for OPA service to be ready..."
+          for i in {1..60}; do
+            if curl -s $OPA_SERVICE_URL/health > /dev/null 2>&1; then
+              echo "OPA service is ready!"
+              break
+            fi
+            echo "  Attempt $i/60: Waiting for OPA service..."
+            sleep 5
+          done
+          
+          if ! curl -s $OPA_SERVICE_URL/health > /dev/null 2>&1; then
+            echo "ERROR: Cannot connect to OPA service"
+            exit 1
+          fi
+          
+          echo ""
+          echo "=== RUNNING 6-NODE CLOUD BENCHMARK ==="
+          echo ""
+          
+          # Run the benchmark script
+          ./scripts/opa-cloud-benchmark.sh
+          
+          echo ""
+          echo "=== 6-NODE BENCHMARK CLIENT COMPLETE ==="
+          echo "Node: $NODE_NAME"
+          echo "Pod: $POD_NAME"
+      restartPolicy: Never
+  backoffLimit: 2

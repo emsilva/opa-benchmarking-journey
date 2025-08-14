@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa-cloud-benchmark
+  labels:
+    app: opa-cloud-benchmark
+    version: optimized
+spec:
+  replicas: 9  # 3 pods per node initially (3 nodes)
+  selector:
+    matchLabels:
+      app: opa-cloud-benchmark
+  template:
+    metadata:
+      labels:
+        app: opa-cloud-benchmark
+        version: optimized
+    spec:
+      # Spread pods evenly across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: 
+                  - opa-cloud-benchmark
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: opa
+        image: opa-cloud-benchmark:optimized
+        imagePullPolicy: Never  # Use local image for now
+        ports:
+        - containerPort: 8181
+          name: http
+        env:
+        - name: BENCHMARK_MODE
+          value: "server"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            cpu: 800m      # Reserve most of 1 core
+            memory: 1Gi    # Reserve 1GB RAM
+          limits:
+            cpu: 1000m     # Allow up to 1 full core
+            memory: 2Gi    # Limit to 2GB RAM
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        # Keep container running for external benchmark clients
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          # Start OPA server with optimized policies
+          /usr/local/bin/opa run --server --addr 0.0.0.0:8181 \
+            --log-level error \
+            policies-optimized/ \
+            data/benchmark_data.json &
+          
+          # Wait for OPA to be ready
+          while ! curl -s http://localhost:8181/health > /dev/null; do
+            echo "Waiting for OPA to start..."
+            sleep 2
+          done
+          
+          echo "OPA server ready on $(hostname)"
+          echo "Node: $NODE_NAME, Pod: $POD_NAME"
+          
+          # Keep container alive
+          while true; do
+            sleep 30
+            # Health check
+            if ! curl -s http://localhost:8181/health > /dev/null; then
+              echo "ERROR: OPA server not responding on $(hostname)"
+              exit 1
+            fi
+          done
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa-service
+  labels:
+    app: opa-cloud-benchmark
+spec:
+  type: ClusterIP
+  sessionAffinity: None  # Ensure even load distribution
+  ports:
+  - port: 8181
+    targetPort: 8181
+    protocol: TCP
+    name: http
+  selector:
+    app: opa-cloud-benchmark

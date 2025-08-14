@@ -1,0 +1,17 @@
+services:
+  authz:
+    url: http://localhost:8181
+
+server:
+  addr: 0.0.0.0:8181
+
+decision_logs:
+  console: true
+
+bundles:
+  policy-bundle:
+    resource: "/policies"
+
+plugins:
+  discovery:
+    name: discovery

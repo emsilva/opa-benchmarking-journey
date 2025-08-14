@@ -1,0 +1,102 @@
+{
+  "users": [
+    {
+      "id": "user_001",
+      "name": "John Admin",
+      "role": "admin"
+    },
+    {
+      "id": "user_002", 
+      "name": "Jane Editor",
+      "role": "editor"
+    },
+    {
+      "id": "user_003",
+      "name": "Bob Viewer", 
+      "role": "viewer"
+    },
+    {
+      "id": "user_004",
+      "name": "Alice Owner",
+      "role": "user"
+    },
+    {
+      "id": "user_005",
+      "name": "Charlie Guest",
+      "role": "guest"
+    }
+  ],
+  "resources": [
+    {
+      "id": "doc_001",
+      "name": "Financial Report Q4",
+      "owner": "user_004",
+      "type": "document"
+    },
+    {
+      "id": "doc_002", 
+      "name": "Project Specifications",
+      "owner": "user_002",
+      "type": "document"
+    },
+    {
+      "id": "file_001",
+      "name": "User Database",
+      "owner": "user_001",
+      "type": "database"
+    },
+    {
+      "id": "sys_001",
+      "name": "Production Server",
+      "owner": "user_001", 
+      "type": "system"
+    }
+  ],
+  "test_scenarios": [
+    {
+      "description": "Admin accessing any resource",
+      "input": {
+        "user": {"id": "user_001", "role": "admin"},
+        "action": "delete",
+        "resource": {"id": "doc_001", "owner": "user_004"}
+      },
+      "expected": true
+    },
+    {
+      "description": "Editor reading document",
+      "input": {
+        "user": {"id": "user_002", "role": "editor"},
+        "action": "read", 
+        "resource": {"id": "doc_001", "owner": "user_004"}
+      },
+      "expected": true
+    },
+    {
+      "description": "Viewer attempting to write",
+      "input": {
+        "user": {"id": "user_003", "role": "viewer"},
+        "action": "write",
+        "resource": {"id": "doc_002", "owner": "user_002"}
+      },
+      "expected": false
+    },
+    {
+      "description": "User accessing own resource", 
+      "input": {
+        "user": {"id": "user_004", "role": "user"},
+        "action": "write",
+        "resource": {"id": "doc_001", "owner": "user_004"}
+      },
+      "expected": true
+    },
+    {
+      "description": "Guest attempting access",
+      "input": {
+        "user": {"id": "user_005", "role": "guest"},
+        "action": "read",
+        "resource": {"id": "doc_001", "owner": "user_004"}
+      },
+      "expected": false
+    }
+  ]
+}

@@ -1,0 +1,414 @@
+{
+  "market_trends": {
+    "residential_property": {
+      "california": {
+        "current_price": 850000,
+        "price_12m_ago": 800000
+      },
+      "texas": {
+        "current_price": 350000, 
+        "price_12m_ago": 340000
+      },
+      "florida": {
+        "current_price": 425000,
+        "price_12m_ago": 450000
+      }
+    },
+    "commercial_property": {
+      "california": {
+        "current_price": 2500000,
+        "price_12m_ago": 2400000
+      },
+      "texas": {
+        "current_price": 1200000,
+        "price_12m_ago": 1250000
+      }
+    },
+    "vehicles": {
+      "national": {
+        "current_price": 35000,
+        "price_12m_ago": 38000
+      }
+    }
+  },
+  "economic_indicators": {
+    "federal_funds_rate": 5.25,
+    "rate_trend": "stable", 
+    "unemployment_rate": 3.8,
+    "gdp_growth_rate": 2.1,
+    "market_volatility_index": 18.5
+  },
+  "economic_cycle": {
+    "current_phase": "expansion"
+  },
+  "high_risk_countries": ["AF", "IR", "KP", "SY", "VE", "MM", "CU"],
+  "sanctions_lists": {
+    "ofac": ["sanctioned_001", "sanctioned_002", "sanctioned_003"],
+    "eu": ["sanctioned_004", "sanctioned_005"],
+    "un": ["sanctioned_006", "sanctioned_007"]
+  },
+  "pep_lists": {
+    "high_risk": ["pep_001", "pep_002", "pep_003"]
+  },
+  "adverse_media": {
+    "financial_crimes": ["adverse_001", "adverse_002"]
+  },
+  "applicable_regulations": [
+    {
+      "name": "GDPR",
+      "applicable": true
+    },
+    {
+      "name": "CCPA", 
+      "applicable": true
+    },
+    {
+      "name": "Basel_III",
+      "applicable": true,
+      "max_risk_score": 40
+    }
+  ],
+  "loan_applications": [
+    {
+      "id": "loan_001",
+      "amount": 500000,
+      "monthly_payment": 3200,
+      "collateral_value": 750000,
+      "collateral_type": "residential_property",
+      "collateral": {
+        "type": "residential_property",
+        "location": "california",
+        "age_years": 5
+      },
+      "applicant": {
+        "id": "applicant_001",
+        "country": "US",
+        "state": "CA",
+        "monthly_income": 12000,
+        "total_monthly_debt": 4500,
+        "credit_scores": {
+          "experian": 780,
+          "equifax": 775,
+          "transunion": 785
+        },
+        "employment": {
+          "industry": "technology",
+          "title": "Senior Software Engineer",
+          "tenure_months": 48,
+          "verified": true,
+          "income_verified": true
+        },
+        "payment_history": [
+          {"timestamp": 1640995200000000000, "days_late": 0},
+          {"timestamp": 1643673600000000000, "days_late": 0}, 
+          {"timestamp": 1646092800000000000, "days_late": 5},
+          {"timestamp": 1648771200000000000, "days_late": 0},
+          {"timestamp": 1651363200000000000, "days_late": 0},
+          {"timestamp": 1654041600000000000, "days_late": 0},
+          {"timestamp": 1656633600000000000, "days_late": 0},
+          {"timestamp": 1659312000000000000, "days_late": 0},
+          {"timestamp": 1661990400000000000, "days_late": 0},
+          {"timestamp": 1664582400000000000, "days_late": 0},
+          {"timestamp": 1667260800000000000, "days_late": 0},
+          {"timestamp": 1669852800000000000, "days_late": 0}
+        ],
+        "transaction_history": [
+          {
+            "timestamp": 1723536000000000000,
+            "amount": 2500,
+            "type": "debit",
+            "location": "San Francisco, CA",
+            "country": "US"
+          },
+          {
+            "timestamp": 1723522800000000000,
+            "amount": 15000,
+            "type": "cash", 
+            "location": "San Francisco, CA",
+            "country": "US"
+          },
+          {
+            "timestamp": 1723458000000000000,
+            "amount": 850,
+            "type": "credit",
+            "location": "San Francisco, CA", 
+            "country": "US"
+          },
+          {
+            "timestamp": 1723371600000000000,
+            "amount": 1200,
+            "type": "debit",
+            "location": "San Francisco, CA",
+            "country": "US"
+          },
+          {
+            "timestamp": 1723285200000000000,
+            "amount": 3200,
+            "type": "transfer",
+            "location": "San Francisco, CA",
+            "country": "US"
+          }
+        ],
+        "spending_history": [
+          {
+            "month": "2023-08",
+            "category": "rent",
+            "amount": 4500,
+            "budgeted": 4500,
+            "actual": 4500
+          },
+          {
+            "month": "2023-08", 
+            "category": "groceries",
+            "amount": 800,
+            "budgeted": 750,
+            "actual": 800
+          },
+          {
+            "month": "2023-08",
+            "category": "entertainment",
+            "amount": 1200,
+            "budgeted": 1000,
+            "actual": 1200
+          },
+          {
+            "month": "2023-08",
+            "category": "utilities",
+            "amount": 350,
+            "budgeted": 300,
+            "actual": 350
+          },
+          {
+            "month": "2023-08",
+            "category": "transportation", 
+            "amount": 450,
+            "budgeted": 500,
+            "actual": 450
+          }
+        ]
+      },
+      "consent": {
+        "data_processing": true,
+        "ccpa_disclosure": true
+      }
+    },
+    {
+      "id": "loan_002",
+      "amount": 75000,
+      "monthly_payment": 950,
+      "collateral_value": 45000,
+      "collateral_type": "vehicles",
+      "collateral": {
+        "type": "vehicles",
+        "location": "texas",
+        "age_years": 2
+      },
+      "applicant": {
+        "id": "applicant_002",
+        "country": "US", 
+        "state": "TX",
+        "monthly_income": 4500,
+        "total_monthly_debt": 2100,
+        "credit_scores": {
+          "experian": 620,
+          "equifax": 615,
+          "transunion": 625
+        },
+        "employment": {
+          "industry": "retail",
+          "title": "Sales Associate", 
+          "tenure_months": 8,
+          "verified": true,
+          "income_verified": true
+        },
+        "payment_history": [
+          {"timestamp": 1640995200000000000, "days_late": 15},
+          {"timestamp": 1643673600000000000, "days_late": 0},
+          {"timestamp": 1646092800000000000, "days_late": 30},
+          {"timestamp": 1648771200000000000, "days_late": 5},
+          {"timestamp": 1651363200000000000, "days_late": 0},
+          {"timestamp": 1654041600000000000, "days_late": 10},
+          {"timestamp": 1656633600000000000, "days_late": 0},
+          {"timestamp": 1659312000000000000, "days_late": 0}, 
+          {"timestamp": 1661990400000000000, "days_late": 120},
+          {"timestamp": 1664582400000000000, "days_late": 0},
+          {"timestamp": 1667260800000000000, "days_late": 0},
+          {"timestamp": 1669852800000000000, "days_late": 5}
+        ],
+        "transaction_history": [
+          {
+            "timestamp": 1723536000000000000,
+            "amount": 500,
+            "type": "debit",
+            "location": "Dallas, TX",
+            "country": "US"
+          },
+          {
+            "timestamp": 1723449600000000000,
+            "amount": 1200,
+            "type": "debit",
+            "location": "Dallas, TX", 
+            "country": "US"
+          },
+          {
+            "timestamp": 1723363200000000000,
+            "amount": 300,
+            "type": "cash",
+            "location": "Dallas, TX",
+            "country": "US"
+          }
+        ],
+        "spending_history": [
+          {
+            "month": "2023-08",
+            "category": "rent",
+            "amount": 1400,
+            "budgeted": 1400,
+            "actual": 1400
+          },
+          {
+            "month": "2023-08",
+            "category": "groceries", 
+            "amount": 600,
+            "budgeted": 500,
+            "actual": 600
+          },
+          {
+            "month": "2023-08",
+            "category": "entertainment",
+            "amount": 800,
+            "budgeted": 400,
+            "actual": 800
+          },
+          {
+            "month": "2023-08",
+            "category": "utilities",
+            "amount": 180,
+            "budgeted": 150,
+            "actual": 180
+          }
+        ]
+      },
+      "consent": {
+        "data_processing": true,
+        "ccpa_disclosure": false
+      }
+    },
+    {
+      "id": "loan_003", 
+      "amount": 2000000,
+      "monthly_payment": 12500,
+      "collateral_value": 2800000,
+      "collateral_type": "commercial_property",
+      "collateral": {
+        "type": "commercial_property",
+        "location": "california",
+        "age_years": 15
+      },
+      "applicant": {
+        "id": "applicant_003",
+        "country": "US",
+        "state": "CA",
+        "monthly_income": 35000,
+        "total_monthly_debt": 8500,
+        "credit_scores": {
+          "experian": 825,
+          "equifax": 820,
+          "transunion": 830
+        },
+        "employment": {
+          "industry": "finance",
+          "title": "Investment Director",
+          "tenure_months": 96,
+          "verified": true,
+          "income_verified": true
+        },
+        "payment_history": [
+          {"timestamp": 1640995200000000000, "days_late": 0},
+          {"timestamp": 1643673600000000000, "days_late": 0},
+          {"timestamp": 1646092800000000000, "days_late": 0},
+          {"timestamp": 1648771200000000000, "days_late": 0},
+          {"timestamp": 1651363200000000000, "days_late": 0},
+          {"timestamp": 1654041600000000000, "days_late": 0},
+          {"timestamp": 1656633600000000000, "days_late": 0},
+          {"timestamp": 1659312000000000000, "days_late": 0},
+          {"timestamp": 1661990400000000000, "days_late": 0},
+          {"timestamp": 1664582400000000000, "days_late": 0},
+          {"timestamp": 1667260800000000000, "days_late": 0},
+          {"timestamp": 1669852800000000000, "days_late": 0}
+        ],
+        "transaction_history": [
+          {
+            "timestamp": 1723536000000000000,
+            "amount": 15000,
+            "type": "transfer",
+            "location": "San Francisco, CA",
+            "country": "US"
+          },
+          {
+            "timestamp": 1723522800000000000,
+            "amount": 5000,
+            "type": "debit",
+            "location": "New York, NY",
+            "country": "US"
+          },
+          {
+            "timestamp": 1723509600000000000,
+            "amount": 25000,
+            "type": "transfer",
+            "location": "San Francisco, CA",
+            "country": "US"
+          },
+          {
+            "timestamp": 1723496400000000000,
+            "amount": 8500,
+            "type": "debit",
+            "location": "London",
+            "country": "GB"
+          }
+        ],
+        "spending_history": [
+          {
+            "month": "2023-08",
+            "category": "mortgage",
+            "amount": 8500,
+            "budgeted": 8500,
+            "actual": 8500
+          },
+          {
+            "month": "2023-08",
+            "category": "groceries",
+            "amount": 1200,
+            "budgeted": 1000,
+            "actual": 1200
+          },
+          {
+            "month": "2023-08", 
+            "category": "travel",
+            "amount": 3500,
+            "budgeted": 3000,
+            "actual": 3500
+          },
+          {
+            "month": "2023-08",
+            "category": "entertainment",
+            "amount": 2200,
+            "budgeted": 2000,
+            "actual": 2200
+          },
+          {
+            "month": "2023-08",
+            "category": "utilities",
+            "amount": 450,
+            "budgeted": 400,
+            "actual": 450
+          }
+        ]
+      },
+      "consent": {
+        "data_processing": true,
+        "ccpa_disclosure": true
+      }
+    }
+  ]
+}

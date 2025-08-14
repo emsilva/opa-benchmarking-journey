@@ -1,0 +1,168 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opa-5node-benchmark
+  labels:
+    app: opa-5node-benchmark
+spec:
+  parallelism: 4  # One client per node (4 nodes due to capacity constraints)
+  completions: 4
+  template:
+    metadata:
+      labels:
+        app: opa-5node-benchmark
+    spec:
+      # Ensure one client pod per node
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values: 
+                - opa-5node-benchmark
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: benchmark-client
+        image: curlimages/curl:latest
+        env:
+        - name: ITERATIONS
+          value: "1000"
+        - name: CONCURRENCY
+          value: "8"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            cpu: 500m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "============================================"
+          echo "OPA 5-Node Cloud Benchmark"
+          echo "============================================"
+          echo "Node: $NODE_NAME"
+          echo "Pod: $POD_NAME"
+          echo "Iterations: $ITERATIONS"
+          echo "Concurrency: $CONCURRENCY"
+          echo "Timestamp: $(date)"
+          echo ""
+          
+          # Test data for different policies
+          RBAC_INPUT='{"input": {"user": {"id": "user_001", "role": "admin"}, "action": "delete", "resource": {"owner": "user_002"}}}'
+          API_INPUT='{"input": {"user": {"id": "user_001", "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "permissions": ["users:read"], "tier": "premium", "department": "engineering"}, "method": "GET", "path": "/api/users", "client_ip": "192.168.1.1"}}'
+          FINANCIAL_INPUT='{"input": {"loan_application": {"amount": 500000, "monthly_payment": 3200, "collateral_value": 750000, "collateral_type": "residential_property", "applicant": {"id": "applicant_001", "country": "US", "monthly_income": 12000, "total_monthly_debt": 4500, "credit_scores": {"experian": 780, "equifax": 775, "transunion": 785}, "employment": {"industry": "technology", "title": "Senior Engineer", "tenure_months": 48, "verified": true, "income_verified": true}, "payment_history": [{"days_late": 0}, {"days_late": 0}, {"days_late": 0}]}}}}' 
+          
+          # Function to benchmark a policy
+          benchmark_policy() {
+            local policy_name="$1"
+            local endpoint="$2"
+            local input_data="$3"
+            local iterations="$4"
+            local concurrency="$5"
+            
+            echo "Benchmarking: $policy_name"
+            echo "---------------------------------------"
+            
+            # Test one request first
+            echo "Testing connectivity..."
+            response=$(curl -s -X POST "http://opa-optimized-service:8181/v1/data/$endpoint" \
+              -H "Content-Type: application/json" \
+              -d "$input_data")
+            echo "First response: $response"
+            
+            if [ -z "$response" ]; then
+              echo "ERROR: No response from OPA service"
+              return 1
+            fi
+            
+            # Simple concurrent benchmark using background processes
+            echo "Running $iterations iterations with $concurrency workers..."
+            
+            start_time=$(date +%s.%N)
+            
+            # Create worker function
+            worker() {
+              local worker_id=$1
+              local worker_iterations=$((iterations / concurrency))
+              
+              for i in $(seq 1 $worker_iterations); do
+                curl -s -X POST "http://opa-optimized-service:8181/v1/data/$endpoint" \
+                  -H "Content-Type: application/json" \
+                  -d "$input_data" >/dev/null 2>&1
+              done
+            }
+            
+            # Launch workers in background
+            for i in $(seq 1 $concurrency); do
+              worker $i &
+            done
+            
+            # Wait for all workers to complete
+            wait
+            
+            end_time=$(date +%s.%N)
+            
+            # Calculate metrics (using awk for floating point)
+            duration=$(awk "BEGIN {print $end_time - $start_time}")
+            policies_per_second=$(awk "BEGIN {printf \"%.2f\", $iterations / $duration}")
+            avg_latency=$(awk "BEGIN {printf \"%.2f\", ($duration * 1000) / $iterations}")
+            
+            echo "Results:"
+            echo "  Total time: ${duration}s"
+            echo "  Average latency: ${avg_latency}ms"
+            echo "  Policies per second: $policies_per_second"
+            echo ""
+            
+            # Save results
+            echo "$policy_name,$iterations,$duration,$policies_per_second,$avg_latency,$concurrency,$NODE_NAME,$POD_NAME" >> /tmp/results.csv
+          }
+          
+          # Wait for OPA service to be ready
+          echo "Waiting for OPA service to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s http://opa-optimized-service:8181/health >/dev/null 2>&1; then
+              echo "OPA service is ready!"
+              break
+            fi
+            echo "  Attempt $i/30: Waiting for OPA service..."
+            sleep 2
+          done
+          
+          if ! curl -s http://opa-optimized-service:8181/health >/dev/null 2>&1; then
+            echo "ERROR: Cannot connect to OPA service"
+            exit 1
+          fi
+          
+          # Initialize results
+          echo "Policy,Iterations,Duration(s),Policies/Second,Avg_Latency(ms),Concurrency,Node,Pod" > /tmp/results.csv
+          
+          echo ""
+          echo "=== RUNNING 5-NODE CLOUD BENCHMARK ==="
+          echo ""
+          
+          # Run benchmarks for all three optimized policies
+          benchmark_policy "Simple RBAC (Optimized)" "rbac/allow" "$RBAC_INPUT" "$ITERATIONS" "$CONCURRENCY"
+          benchmark_policy "API Authorization (Optimized)" "api/authz/allow" "$API_INPUT" "$ITERATIONS" "$CONCURRENCY"  
+          benchmark_policy "Financial Risk (Optimized)" "finance/risk/approve_loan" "$FINANCIAL_INPUT" "$ITERATIONS" "$CONCURRENCY"
+          
+          echo ""
+          echo "=== 5-NODE BENCHMARK COMPLETE ==="
+          echo "Node: $NODE_NAME"
+          echo "Pod: $POD_NAME"
+          echo ""
+          echo "Results:"
+          cat /tmp/results.csv
+      restartPolicy: Never
+  backoffLimit: 2

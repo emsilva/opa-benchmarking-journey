@@ -1,0 +1,52 @@
+{
+  "market_trends": {
+    "residential_property": {
+      "california": {
+        "current_price": 850000,
+        "price_12m_ago": 800000
+      }
+    }
+  },
+  "economic_indicators": {
+    "federal_funds_rate": 5.25,
+    "rate_trend": "stable", 
+    "unemployment_rate": 3.8,
+    "gdp_growth_rate": 2.1,
+    "market_volatility_index": 18.5
+  },
+  "high_risk_countries": ["AF", "IR", "KP"],
+  "sanctions_lists": {
+    "ofac": ["sanctioned_001"],
+    "eu": ["sanctioned_002"],
+    "un": ["sanctioned_003"]
+  },
+  "pep_lists": {
+    "high_risk": ["pep_001"]
+  },
+  "adverse_media": {
+    "financial_crimes": ["adverse_001"]
+  },
+  "request_log": [
+    {"user_id": "user_standard_002", "timestamp": 1723550000000000000, "path": "/api/products"}
+  ],
+  "users": [
+    {
+      "id": "user_001",
+      "name": "John Admin",
+      "role": "admin"
+    },
+    {
+      "id": "user_002", 
+      "name": "Jane Editor",
+      "role": "editor"
+    }
+  ],
+  "resources": [
+    {
+      "id": "doc_001",
+      "name": "Financial Report Q4",
+      "owner": "user_004",
+      "type": "document"
+    }
+  ]
+}

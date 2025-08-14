@@ -1,0 +1,40 @@
+# OPA Benchmarking Journey - Git Ignore
+
+# OPA binaries (should only exist in containers)
+opa
+opa_*
+
+# Temporary benchmark results
+/tmp/
+*.csv
+
+# Build artifacts
+bundles/*.tar.gz
+wasm/*.wasm
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker related
+.dockerignore
+
+# Logs
+*.log
+
+# Claude Code files
+.claude/
+claude.md
+BENCHMARK_LOG.md

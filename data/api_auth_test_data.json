@@ -1,0 +1,128 @@
+{
+  "users": [
+    {
+      "id": "user_premium_001",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX3ByZW1pdW1fMDAxIiwiaWF0IjoxNzIzNTM2MDAwLCJleHAiOjk5OTk5OTk5OTl9.signature",
+      "permissions": ["users:read", "users:write", "orders:read", "orders:create", "products:read", "analytics:read"],
+      "tier": "premium",
+      "department": "engineering"
+    },
+    {
+      "id": "user_standard_002", 
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX3N0YW5kYXJkXzAwMiIsImlhdCI6MTcyMzUzNjAwMCwiZXhwIjo5OTk5OTk5OTk5fQ.signature",
+      "permissions": ["orders:read", "products:read"],
+      "tier": "standard", 
+      "department": "sales"
+    },
+    {
+      "id": "user_basic_003",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX2Jhc2ljXzAwMyIsImlhdCI6MTcyMzUzNjAwMCwiZXhwIjo5OTk5OTk5OTk5fQ.signature", 
+      "permissions": ["products:read"],
+      "tier": "basic",
+      "department": "support"
+    },
+    {
+      "id": "user_confidential_004",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX2NvbmZpZGVudGlhbF8wMDQiLCJpYXQiOjE3MjM1MzYwMDAsImV4cCI6OTk5OTk5OTk5OX0.signature",
+      "permissions": ["users:read", "orders:read", "data:confidential", "analytics:read"],
+      "tier": "premium",
+      "department": "finance"
+    },
+    {
+      "id": "user_expired_005",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX2V4cGlyZWRfMDA1IiwiaWF0IjoxNzIzNTM2MDAwLCJleHAiOjE3MjM1MzYwMDB9.signature",
+      "permissions": ["products:read"],
+      "tier": "standard",
+      "department": "sales"
+    }
+  ],
+  "request_log": [
+    {"user_id": "user_standard_002", "timestamp": 1723550000000000000, "path": "/api/products"},
+    {"user_id": "user_standard_002", "timestamp": 1723550010000000000, "path": "/api/orders"},
+    {"user_id": "user_standard_002", "timestamp": 1723550020000000000, "path": "/api/products"},
+    {"user_id": "user_standard_002", "timestamp": 1723550030000000000, "path": "/api/orders"},
+    {"user_id": "user_standard_002", "timestamp": 1723550040000000000, "path": "/api/products"}
+  ],
+  "test_scenarios": [
+    {
+      "description": "Premium user accessing users endpoint during business hours",
+      "input": {
+        "user": {
+          "id": "user_premium_001",
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX3ByZW1pdW1fMDAxIiwiaWF0IjoxNzIzNTM2MDAwLCJleHAiOjk5OTk5OTk5OTl9.signature",
+          "permissions": ["users:read", "users:write", "orders:read", "orders:create", "products:read", "analytics:read"],
+          "tier": "premium",
+          "department": "engineering"
+        },
+        "method": "GET",
+        "path": "/api/users",
+        "client_ip": "192.168.1.100"
+      },
+      "expected": true
+    },
+    {
+      "description": "Standard user accessing orders outside business hours",
+      "input": {
+        "user": {
+          "id": "user_standard_002",
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX3N0YW5kYXJkXzAwMiIsImlhdCI6MTcyMzUzNjAwMCwiZXhwIjo5OTk5OTk5OTk5fQ.signature",
+          "permissions": ["orders:read", "products:read"],
+          "tier": "standard",
+          "department": "sales"
+        },
+        "method": "GET", 
+        "path": "/api/orders",
+        "client_ip": "192.168.1.101"
+      },
+      "expected": false
+    },
+    {
+      "description": "Basic user without sufficient permissions",
+      "input": {
+        "user": {
+          "id": "user_basic_003",
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX2Jhc2ljXzAwMyIsImlhdCI6MTcyMzUzNjAwMCwiZXhwIjo5OTk5OTk5OTk5fQ.signature",
+          "permissions": ["products:read"],
+          "tier": "basic",
+          "department": "support"
+        },
+        "method": "GET",
+        "path": "/api/users", 
+        "client_ip": "192.168.1.102"
+      },
+      "expected": false
+    },
+    {
+      "description": "User with confidential permissions accessing financial data",
+      "input": {
+        "user": {
+          "id": "user_confidential_004", 
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX2NvbmZpZGVudGlhbF8wMDQiLCJpYXQiOjE3MjM1MzYwMDAsImV4cCI6OTk5OTk5OTk5OX0.signature",
+          "permissions": ["users:read", "orders:read", "data:confidential", "analytics:read"],
+          "tier": "premium",
+          "department": "finance"
+        },
+        "method": "GET",
+        "path": "/api/financials/reports",
+        "client_ip": "192.168.1.103"
+      },
+      "expected": true
+    },
+    {
+      "description": "User with expired token",
+      "input": {
+        "user": {
+          "id": "user_expired_005",
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyX2V4cGlyZWRfMDA1IiwiaWF0IjoxNzIzNTM2MDAwLCJleHAiOjE3MjM1MzYwMDB9.signature",
+          "permissions": ["products:read"],
+          "tier": "standard",
+          "department": "sales"
+        },
+        "method": "GET",
+        "path": "/api/products",
+        "client_ip": "192.168.1.104"
+      },
+      "expected": false
+    }
+  ]
+}
